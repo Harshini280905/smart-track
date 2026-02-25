@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SmartTrack — Project Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background: #f0f2f5; font-family: 'Segoe UI', sans-serif; }
+    .navbar { background: #1a1a2e; }
+    .card { border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .badge-high { background:#e74c3c; } .badge-medium { background:#f39c12; } .badge-low { background:#27ae60; }
+    .status-todo { color:#e74c3c; } .status-progress { color:#f39c12; } .status-done { color:#27ae60; }
+    .story-card { border-left: 4px solid #3498db; margin-bottom:8px; padding:10px 14px; background:#fff; border-radius:6px; }
+    .story-card.closed { border-left-color: #27ae60; opacity:0.8; }
+    #loadingSpinner { display:none; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark px-4 py-3">
+  <span class="navbar-brand fw-bold fs-4">🚀 SmartTrack</span>
+  <span class="text-white-50 small">Team Project & Task Management Dashboard</span>
+</nav>
+
+<div class="container-fluid p-4">
+  <div class="row g-4">
+
+    <!-- LEFT: Projects -->
+    <div class="col-md-4">
+      <div class="card p-4">
+        <h5 class="fw-bold mb-3">📁 Projects</h5>
+        <div class="input-group mb-3">
+          <input type="text" id="projectName" class="form-control" placeholder="New project name..."/>
+          <input type="text" id="projectDesc" class="form-control" placeholder="Description..."/>
+          <button class="btn btn-primary" onclick="createProject()">+ Add</button>
+        </div>
+        <div id="projectList">Loading projects...</div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: Tasks -->
+    <div class="col-md-5">
+      <div class="card p-4">
+        <h5 class="fw-bold mb-3">✅ Tasks <span id="selectedProjectName" class="text-muted fs-6"></span></h5>
+        <div class="row g-2 mb-3">
+          <div class="col-6"><input type="text" id="taskTitle" class="form-control" placeholder="Task title..."/></div>
+          <div class="col-3">
+            <select id="taskPriority" class="form-select">
+              <option>High</option><option selected>Medium</option><option>Low</option>
+            </select>
+          </div>
+          <div class="col-3"><input type="text" id="taskAssignee" class="form-control" placeholder="Assignee"/></div>
+        </div>
+        <button class="btn btn-success w-100 mb-3" onclick="createTask()">+ Add Task</button>
+        <div id="taskList">Select a project to view tasks.</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Stats + User Stories -->
+    <div class="col-md-3">
+      <div class="card p-4 mb-4">
+        <h5 class="fw-bold mb-3">📊 Task Progress</h5>
+        <canvas id="taskChart" height="160"></canvas>
+      </div>
+      <div class="card p-4">
+        <h5 class="fw-bold mb-2">📋 Live User Stories</h5>
+        <p class="text-muted small mb-2">Fetched in real time from GitHub Issues</p>
+        <div id="storiesList">Loading stories...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let selectedProjectId = null;
+let taskChart = null;
+
+// ── PROJECTS ──────────────────────────────────────────────
+async function loadProjects() {
+  const res = await fetch('/api/projects');
+  const projects = await res.json();
+  const list = document.getElementById('projectList');
+  if (!projects.length) { list.innerHTML = '<p class="text-muted">No projects yet.</p>'; return; }
+  list.innerHTML = projects.map(p => `
+    <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2 ${selectedProjectId===p.id?'bg-primary text-white':'bg-white'}" 
+         style="cursor:pointer" onclick="selectProject(${p.id}, '${p.name}')">
+      <div>
+        <div class="fw-semibold">${p.name}</div>
+        <div class="small ${selectedProjectId===p.id?'text-white-50':'text-muted'}">${p.description||''}</div>
+        <div class="small">
+          <span class="text-success">${p.task_stats['Done']||0} done</span> · 
+          <span class="text-warning">${p.task_stats['In Progress']||0} in progress</span> · 
+          <span class="text-danger">${p.task_stats['Todo']||0} todo</span>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation();deleteProject(${p.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function createProject() {
+  const name = document.getElementById('projectName').value.trim();
+  const desc = document.getElementById('projectDesc').value.trim();
+  if (!name) return alert('Enter a project name');
+  await fetch('/api/projects', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, description: desc}) });
+  document.getElementById('projectName').value = '';
+  document.getElementById('projectDesc').value = '';
+  loadProjects();
+}
+
+async function deleteProject(id) {
+  if (!confirm('Delete this project and all its tasks?')) return;
+  await fetch(`/api/projects/${id}`, { method:'DELETE' });
+  if (selectedProjectId === id) { selectedProjectId = null; document.getElementById('taskList').innerHTML = ''; }
+  loadProjects();
+}
+
+function selectProject(id, name) {
+  selectedProjectId = id;
+  document.getElementById('selectedProjectName').textContent = `— ${name}`;
+  loadTasks(id);
+  loadProjects();
+}
+
+// ── TASKS ─────────────────────────────────────────────────
+async function loadTasks(projectId) {
+  const res = await fetch(`/api/projects/${projectId}/tasks`);
+  const tasks = await res.json();
+  const list = document.getElementById('taskList');
+  if (!tasks.length) { list.innerHTML = '<p class="text-muted">No tasks yet.</p>'; updateChart({}); return; }
+
+  const statusGroups = { 'Todo': [], 'In Progress': [], 'Done': [] };
+  tasks.forEach(t => (statusGroups[t.status] || statusGroups['Todo']).push(t));
+
+  list.innerHTML = Object.entries(statusGroups).map(([status, items]) => items.length ? `
+    <div class="mb-2">
+      <div class="fw-semibold small text-uppercase text-muted mb-1">${status}</div>
+      ${items.map(t => `
+        <div class="border rounded p-2 mb-1 bg-white d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-semibold">${t.title}</div>
+            <div class="small text-muted">${t.assignee} · <span class="badge badge-${t.priority.toLowerCase()} text-white">${t.priority}</span></div>
+          </div>
+          <div class="d-flex gap-1">
+            <select class="form-select form-select-sm" style="width:120px" onchange="updateTask(${t.id}, this.value)">
+              ${['Todo','In Progress','Done'].map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}
+            </select>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteTask(${t.id})">✕</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  ` : '').join('');
+
+  updateChart({'Todo': statusGroups['Todo'].length, 'In Progress': statusGroups['In Progress'].length, 'Done': statusGroups['Done'].length});
+}
+
+async function createTask() {
+  if (!selectedProjectId) return alert('Select a project first');
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) return alert('Enter a task title');
+  await fetch('/api/tasks', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      project_id: selectedProjectId, title,
+      priority: document.getElementById('taskPriority').value,
+      assignee: document.getElementById('taskAssignee').value || 'Unassigned'
+    })
+  });
+  document.getElementById('taskTitle').value = '';
+  loadTasks(selectedProjectId);
+}
+
+async function updateTask(id, status) {
+  await fetch(`/api/tasks/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+  loadTasks(selectedProjectId);
+}
+
+async function deleteTask(id) {
+  await fetch(`/api/tasks/${id}`, { method:'DELETE' });
+  loadTasks(selectedProjectId);
+}
+
+// ── CHART ─────────────────────────────────────────────────
+function updateChart(stats) {
+  const ctx = document.getElementById('taskChart').getContext('2d');
+  if (taskChart) taskChart.destroy();
+  taskChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Todo', 'In Progress', 'Done'],
+      datasets: [{ data: [stats['Todo']||0, stats['In Progress']||0, stats['Done']||0],
+        backgroundColor: ['#e74c3c','#f39c12','#27ae60'] }]
+    },
+    options: { plugins: { legend: { position: 'bottom' } }, cutout: '65%' }
+  });
+}
+
+// ── LIVE USER STORIES ─────────────────────────────────────
+async function loadStories() {
+  const res = await fetch('/api/stories');
+  const data = await res.json();
+  const list = document.getElementById('storiesList');
+  if (!data.stories || !data.stories.length) { list.innerHTML = '<p class="text-muted small">No stories found.</p>'; return; }
+  const source = data.source === 'github' ? `<span class="badge bg-success">GitHub Live</span>` : `<span class="badge bg-secondary">Mock Data</span>`;
+  list.innerHTML = source + '<div class="mt-2">' + data.stories.map(s => `
+    <div class="story-card ${s.state==='closed'?'closed':''}">
+      <div class="fw-semibold small">${s.title}</div>
+      <div class="d-flex gap-1 mt-1">
+        <span class="badge ${s.state==='open'?'bg-primary':'bg-success'}">${s.state}</span>
+        ${s.labels.filter(l=>l!=='user-story').map(l=>`<span class="badge bg-secondary">${l}</span>`).join('')}
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
+
+// ── INIT ──────────────────────────────────────────────────
+updateChart({});
+loadProjects();
+loadStories();
+setInterval(loadStories, 60000); // Refresh stories every 60s
+</script>
+</body>
+</html>
