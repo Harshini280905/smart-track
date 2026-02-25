@@ -1,7 +1,5 @@
 # SmartTrack — Team Project & Task Management Dashboard
 
-![Python](https://img.shields.io/badge/Python-3.11-blue) ![Flask](https://img.shields.io/badge/Flask-3.0-green) ![Docker](https://img.shields.io/badge/Docker-Ready-blue) ![CI/CD](https://img.shields.io/badge/CI%2FCD-Jenkins%20%7C%20GitHub%20Actions-orange)
-
 > A full-stack web application for managing team projects and tasks with real-time user story tracking via GitHub Issues API.
 
 ---
@@ -12,7 +10,6 @@
 - Add tasks with title, priority, assignee, and due date
 - Update task status (Todo → In Progress → Done)
 - Dashboard with live progress charts
-- Real-time user stories fetched from GitHub Issues
 - REST API backend with JSON responses
 - Fully containerized with Docker
 
