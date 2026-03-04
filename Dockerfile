@@ -7,7 +7,7 @@
 FROM python:3.11-slim
 
 # Set metadata labels
-LABEL maintainer="rajkumar"
+LABEL maintainer="mukunth"
 LABEL app="smarttrack"
 LABEL version="1.0"
 
