@@ -89,7 +89,7 @@ jobs:
           echo "Image pushed: ${{ secrets.DOCKERHUB_USERNAME }}/smarttrack-app:latest"
           echo "Run with: docker run -p 5000:5000 ${{ secrets.DOCKERHUB_USERNAME }}/smarttrack-app:latest"
 
-  # ── STAGE 4: DEPLOY TO AWS EC2 (Nice to Have) ──────────────────────────────
+  # ── STAGE 4: DEPLOY TO AWS EC2 ───────────────────────────────────────────────
   deploy-to-ec2:
     name: "Stage 4: Deploy to AWS EC2"
     runs-on: ubuntu-latest
@@ -101,24 +101,30 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             echo "=== Deploying SmartTrack to EC2 ==="
+
+            # Login to DockerHub
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             # Pull latest image
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/smarttrack-app:latest
 
             # Stop and remove existing container
-            docker stop smarttrack-app || true
-            docker rm smarttrack-app || true
+            docker stop smarttrack || true
+            docker rm smarttrack || true
 
             # Run new container
             docker run -d \
-              --name smarttrack-app \
-              -p 5000:5000 \
+              --name smarttrack \
+              -p 80:5000 \
               --restart unless-stopped \
               ${{ secrets.DOCKERHUB_USERNAME }}/smarttrack-app:latest
 
+            # Verify deployment
             echo "=== Deployment complete ==="
             docker ps | grep smarttrack
+            echo "App accessible at: http://${{ secrets.EC2_HOST }}"
+
