@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # SmartTrack — GitHub Actions CI/CD Workflow
-# 4 Stages: Clone → Build & Test → Docker Build & Push → Deploy to EC2
+# Alternative to Jenkinsfile | 4 Stages
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: SmartTrack CI/CD Pipeline
@@ -52,7 +52,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m pytest test_app.py -v --tb=short
+          python -m pytest tests/ -v --tb=short
 
   # ── STAGE 3: DOCKER BUILD & PUSH ───────────────────────────────────────────
   docker-build-push:
